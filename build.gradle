@@ -6,6 +6,11 @@ plugins {
   id 'org.cyclonedx.bom' version '1.10.0'
   id 'io.spring.javaformat' version '0.0.43'
   id "io.spring.nohttp" version "0.0.11"
+  id 'jacoco'
+}
+
+jacoco {
+  toolVersion = "0.8.11"
 }
 
 apply plugin: 'java'
@@ -58,6 +63,8 @@ dependencies {
   testImplementation 'org.testcontainers:mysql'
   checkstyle "io.spring.javaformat:spring-javaformat-checkstyle:${springJavaformatCheckstyleVersion}"
   checkstyle "com.puppycrawl.tools:checkstyle:${checkstyleVersion}"
+
+//  jacocoAgent "org.jacoco:org.jacoco.agent:0.8.11:runtime"
 }
 
 tasks.named('test') {
@@ -73,6 +80,50 @@ checkstyleNohttp {
   configDirectory = project.file('src/checkstyle')
   configFile = file('src/checkstyle/nohttp-checkstyle.xml')
 }
+
+jacocoTestReport {
+  dependsOn test // Зависимость от задачи test
+  reports {
+    xml.required = false
+    csv.required = false
+    html.required = true
+    html.outputLocation = layout.buildDirectory.dir('jacocoHtml')
+  }
+
+  afterEvaluate {
+    classDirectories.setFrom(files(classDirectories.files.collect {
+      fileTree(dir: it, exclude: [
+        '**/model/**',       // Исключаем модели
+        '**/config/**',     // Исключаем конфигурации
+        '**/exception/**'   // Исключаем исключения
+      ])
+    }))
+  }
+}
+
+jacocoTestCoverageVerification {
+  violationRules {
+    rule {
+      limit {
+        minimum = 0.5 // Минимальное покрытие 50%
+      }
+    }
+    rule {
+      element = 'CLASS'
+      includes = ['com.yourpackage.service.*']
+      limit {
+        counter = 'LINE'
+        value = 'COVEREDRATIO'
+        minimum = 0.7 // Для сервисов требуем 70% покрытия
+      }
+    }
+  }
+}
+
+
+// Проверка покрытия после тестов
+test.finalizedBy jacocoTestReport
+check.dependsOn jacocoTestCoverageVerification
 
 tasks.named("formatMain").configure { dependsOn("checkstyleMain") }
 tasks.named("formatMain").configure { dependsOn("checkstyleNohttp") }
