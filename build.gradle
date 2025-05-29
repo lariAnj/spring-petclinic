@@ -145,16 +145,6 @@ task integrationTest(type: Test) {
   }
 }
 
-//tasks.register('jacocoCombinedReport', JacocoReport) {
-//  dependsOn test, integrationTest
-//  executionData fileTree(layout.buildDirectory).include("jacoco/*.exec")
-//  sourceSets sourceSets.main
-//  reports {
-//    xml.required = false
-//    html.required = true
-//  }
-//}
-
 task jacocoIntegrationTestReport(type: JacocoReport) {
   description = 'Generates JaCoCo coverage reports for integration tests.'
   group = 'verification'
@@ -206,6 +196,7 @@ jacocoTestCoverageVerification {
 
 task jacocoMergeReports(type: JacocoReport) {
   dependsOn test, integrationTest
+  group = 'verification'
   executionData fileTree(layout.buildDirectory).include("jacoco/*.exec") // Merges all .exec files
   sourceSets sourceSets.main
 
@@ -226,21 +217,7 @@ task jacocoMergeReports(type: JacocoReport) {
   }
 }
 
-//task jacocoMergeReportsSecond(type: JacocoMerge) {
-//  executionData test, integrationTest // Merge execution data from 2 tasks
-//  destinationFile = layout.buildDirectory.file("jacoco/merged.exec").get().asFile
-//}
-//
-//task jacocoFullReport(type: JacocoReport) {
-//  dependsOn jacocoMergeReports
-//
-//  executionData jacocoMergeReports.destinationFile
-//  sourceSets sourceSets.main
-//
-//  reports {
-//    html.required = true
-//  }
-//}
+//tasks.register('jacocoMergeReports', JacocoReport) { }
 
 // Связываем задачи
 check.dependsOn integrationTest // Ensure integration tests run during `./gradlew check`
