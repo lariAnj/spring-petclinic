@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.springframework.samples.petclinic;
+package org.springframework.samples.petclinic.integrationTests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

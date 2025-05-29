@@ -11,6 +11,7 @@ plugins {
 
 jacoco {
   toolVersion = "0.8.11"
+  reportsDirectory = layout.buildDirectory.dir('jacocoReportsDir')
 }
 
 apply plugin: 'java'
@@ -64,11 +65,14 @@ dependencies {
   checkstyle "io.spring.javaformat:spring-javaformat-checkstyle:${springJavaformatCheckstyleVersion}"
   checkstyle "com.puppycrawl.tools:checkstyle:${checkstyleVersion}"
 
-//  jacocoAgent "org.jacoco:org.jacoco.agent:0.8.11:runtime"
+  // Custom integrationTestImplementation usage example
+  //  integrationTestImplementation 'org.testcontainers:postgresql:1.19.0'
 }
+
 
 tasks.named('test') {
   useJUnitPlatform()
+  exclude '**/integrationTests/**'
 }
 
 checkstyle {
@@ -82,21 +86,100 @@ checkstyleNohttp {
 }
 
 jacocoTestReport {
-  dependsOn test // Зависимость от задачи test
+  dependsOn test // Depends on 'test' task
   reports {
     xml.required = false
     csv.required = false
     html.required = true
-    html.outputLocation = layout.buildDirectory.dir('jacocoHtml')
+    html.outputLocation = layout.buildDirectory.dir('reports/jacoco/test')
+  }
+
+  // Exclusion of files from the analysis
+  afterEvaluate {
+    classDirectories.setFrom(files(classDirectories.files.collect {
+      fileTree(dir: it, exclude: [
+        '**/model/**',       // Ignore DTO/models
+        '**/config/**',     // Ignore configs
+        '**/generated/**',    // Ignore generated code
+        '**/exception/**',   // Ignore exceptions
+      ])
+    }))
+  }
+}
+
+sourceSets {
+  integrationTest {
+    java {
+      // Добавляем к classpath:
+      //    - Скомпилированные классы основного кода (main.output) - .class
+      //    - Зависимости для запуска тестов (testRuntimeClasspath)
+      compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+      // Runtime classpath включает:
+      //    - Скомпилированные тесты (output)
+      //    - Всё из compileClasspath
+      runtimeClasspath += output + compileClasspath
+      srcDir file('src/test/java')
+    }
+//    resources.srcDir file('src/integrationTest/resources')
+  }
+}
+
+configurations {
+  integrationTestImplementation.extendsFrom testImplementation
+  integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+task integrationTest(type: Test) {
+  description = 'Runs integration tests.'
+  group = 'verification'
+  include '**/integrationTests/**'
+  testClassesDirs = sourceSets.integrationTest.output.classesDirs
+  classpath = sourceSets.integrationTest.runtimeClasspath
+  shouldRunAfter test
+  useJUnitPlatform()
+
+  // Configure Jacoco to generate execution data for integration tests
+  jacoco {
+    enabled = true  // Explicitly enable the agent
+    destinationFile = layout.buildDirectory.file("jacoco/integrationTest.exec").get().asFile
+  }
+}
+
+//tasks.register('jacocoCombinedReport', JacocoReport) {
+//  dependsOn test, integrationTest
+//  executionData fileTree(layout.buildDirectory).include("jacoco/*.exec")
+//  sourceSets sourceSets.main
+//  reports {
+//    xml.required = false
+//    html.required = true
+//  }
+//}
+
+task jacocoIntegrationTestReport(type: JacocoReport) {
+  description = 'Generates JaCoCo coverage reports for integration tests.'
+  group = 'verification'
+  dependsOn integrationTest
+// Use execution data (tests execution results) from integrationTest task
+  executionData integrationTest
+//  executionData file("jacoco/integrationTest.exec")
+  sourceSets sourceSets.main // Link to main source files for coverage analysis
+
+  reports {
+    xml.required = true  // For CI tools (e.g., SonarQube)
+    html.required = true
+    html.outputLocation = layout.buildDirectory.dir("reports/jacoco/integrationTest")
   }
 
   afterEvaluate {
     classDirectories.setFrom(files(classDirectories.files.collect {
-      fileTree(dir: it, exclude: [
-        '**/model/**',       // Исключаем модели
-        '**/config/**',     // Исключаем конфигурации
-        '**/exception/**'   // Исключаем исключения
+      fileTree(dir: it, excludes: [
+        "**/config/**",
+        "**/entity/**",
+        "**/model/**"
       ])
+//      fileTree(dir: it, include: [
+//        '**/system/**'
+//      ])
     }))
   }
 }
@@ -105,25 +188,68 @@ jacocoTestCoverageVerification {
   violationRules {
     rule {
       limit {
-        minimum = 0.5 // Минимальное покрытие 50%
+        minimum = 0.5
       }
     }
     rule {
+      enabled = true
       element = 'CLASS'
-      includes = ['com.yourpackage.service.*']
+      includes = ['org.springframework.samples.petclinic']
       limit {
         counter = 'LINE'
         value = 'COVEREDRATIO'
-        minimum = 0.7 // Для сервисов требуем 70% покрытия
+        minimum = 0.7
       }
     }
   }
 }
 
+task jacocoMergeReports(type: JacocoReport) {
+  dependsOn test, integrationTest
+  executionData fileTree(layout.buildDirectory).include("jacoco/*.exec") // Merges all .exec files
+  sourceSets sourceSets.main
 
-// Проверка покрытия после тестов
-test.finalizedBy jacocoTestReport
+  reports {
+    html.required = true
+    html.outputLocation = layout.buildDirectory.dir("reports/jacoco/merged")
+    xml.required = true
+    xml.outputLocation = layout.buildDirectory.file("reports/jacoco/merged/merged_report.xml")
+  }
+
+  afterEvaluate {
+    classDirectories.setFrom(files(classDirectories.files.collect {
+      fileTree(dir: it, excludes: [
+        '**/config/**',
+        '**/model/**'
+      ])
+    }))
+  }
+}
+
+//task jacocoMergeReportsSecond(type: JacocoMerge) {
+//  executionData test, integrationTest // Merge execution data from 2 tasks
+//  destinationFile = layout.buildDirectory.file("jacoco/merged.exec").get().asFile
+//}
+//
+//task jacocoFullReport(type: JacocoReport) {
+//  dependsOn jacocoMergeReports
+//
+//  executionData jacocoMergeReports.destinationFile
+//  sourceSets sourceSets.main
+//
+//  reports {
+//    html.required = true
+//  }
+//}
+
+// Связываем задачи
+check.dependsOn integrationTest // Ensure integration tests run during `./gradlew check`
 check.dependsOn jacocoTestCoverageVerification
+test.finalizedBy jacocoTestReport // Auto-generate unit test report
+integrationTest.finalizedBy jacocoIntegrationTestReport // Auto-generate integration test report
+check.finalizedBy jacocoMergeReports // Auto-generate merged test report
+
+
 
 tasks.named("formatMain").configure { dependsOn("checkstyleMain") }
 tasks.named("formatMain").configure { dependsOn("checkstyleNohttp") }
